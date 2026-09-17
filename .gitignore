@@ -1,0 +1,40 @@
+# Secrets & config
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Tooling
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+
+# Local probe/dev artifacts (must not enter the repo)
+_probe_images/
+*_probe_results.md
+
+# Runtime data (uploaded docs, rendered pages, indexes)
+data/
+*.local
+.pytest_cache/
+.coverage
+htmlcov/
