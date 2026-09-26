@@ -11,12 +11,17 @@ Then open the printed local URL (default http://127.0.0.1:7860).
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import gradio as gr
 
 from rag.config import Settings, get_settings
 from rag.ingest import DocumentStore, DocumentParserError, ingest_document
+
+if TYPE_CHECKING:
+    from rag.quiz import EvidenceCatalog
 
 
 # --------------------------------------------------------------------------- #
@@ -268,6 +273,179 @@ def ask_question(question: str, settings: Settings | None = None) -> tuple:
 
 
 # --------------------------------------------------------------------------- #
+# Practice Quiz (Issue #6)
+# --------------------------------------------------------------------------- #
+# Session-scoped mapping from quiz_id -> catalog of evidence used (so reveal()
+# and public-image lookup can attach trusted sources without re-retrieving).
+_QUIZ_CATALOGS: dict[str, "EvidenceCatalog"] = {}
+
+# Gradio pre-creates this many question panels; only the first n_questions are
+# shown after generation, the rest stay hidden.
+MAX_QUIZ_QUESTIONS = 10
+
+
+def generate_quiz_ui(
+    topic: str,
+    n_questions: int,
+    settings: Settings | None = None,
+) -> tuple:
+    """Generate a quiz and return (opaque_quiz_id, public_data, status).
+
+    The opaque quiz id is a random UUID that keys the frozen private Quiz in
+    the server-side registry. The public data is ONLY for rendering the
+    questions (no answer key). The id and the public data are separate values —
+    the private key and source mapping never leave the server.
+    """
+    from rag.quiz import (
+        build_evidence_catalog, build_public_quiz, generate_quiz, QuizError)
+
+    s = settings or get_settings()
+    store = _new_store(s)
+    if not topic or not topic.strip():
+        topic = None
+    try:
+        ti, vi = get_qa_indexes(store, settings=s)
+    except Exception as exc:  # noqa: BLE001
+        return ("", {}, f"⚠️ Could not build retrieval indexes: {exc}")
+
+    try:
+        quiz, evidence = generate_quiz(
+            topic=topic, text_idx=ti, visual_idx=vi,
+            n_questions=int(n_questions), settings=s)
+    except QuizError as exc:
+        return ("", {}, f"⚠️ Quiz generation failed: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        return ("", {}, f"⚠️ Quiz error: {exc}")
+
+    catalog = build_evidence_catalog(evidence)
+    _QUIZ_CATALOGS[quiz.quiz_id] = catalog
+    pub = build_public_quiz(quiz, catalog).to_dict()
+    return (quiz.quiz_id, pub, "✅ Quiz generated")
+
+
+def grade_quiz_ui(quiz_id: str, answers_json: str) -> str:
+    """Grade submitted answers against the frozen key (zero 9001 calls).
+
+    ``quiz_id`` is the opaque UUID; the frozen private Quiz is retrieved from
+    the server-side registry. The public quiz data is never used to lookup or
+    grade.
+    """
+    from rag.quiz import grade_quiz, get_quiz
+    quiz = get_quiz(quiz_id)
+    if quiz is None:
+        return json.dumps({"error": "unknown quiz"})
+    try:
+        answers = json.loads(answers_json) if answers_json else {}
+    except json.JSONDecodeError:
+        answers = {}
+    return json.dumps(grade_quiz(quiz, answers))
+
+
+def reveal_quiz_ui(quiz_id: str) -> str:
+    """Reveal answers/explanations/citations only after submit or explicit ask."""
+    from rag.quiz import get_quiz, reveal
+    quiz = get_quiz(quiz_id)
+    if quiz is None:
+        return json.dumps({"error": "unknown quiz"})
+    catalog = _QUIZ_CATALOGS.get(quiz_id)
+    from rag.quiz import EvidenceCatalog
+    if catalog is None:
+        catalog = EvidenceCatalog()
+    return json.dumps(reveal(quiz, catalog))
+
+
+# --------------------------------------------------------------------------- #
+# Human-readable quiz UI via real Gradio controls (no manual JSON).
+# --------------------------------------------------------------------------- #
+def _build_answers_from_radios(quiz, radio_values: list) -> dict:
+    """Map Gradio radio selections -> {question_id: chosen_option_text}."""
+    answers: dict = {}
+    for i, q in enumerate(quiz.questions):
+        val = radio_values[i] if i < len(radio_values) else None
+        if val:
+            answers[q.question_id] = str(val)
+    return answers
+
+
+def _grade_from_radios(quiz_id: str, *radio_values) -> str:
+    """Grade the frozen quiz from radio selections; returns human-readable text."""
+    from rag.quiz import get_quiz, grade_quiz
+    quiz = get_quiz(quiz_id)
+    if quiz is None:
+        return "❌ Unknown quiz. Generate a quiz first."
+    answers = _build_answers_from_radios(quiz, list(radio_values))
+    res = grade_quiz(quiz, answers)
+    lines = [f"**Score: {res['correct']} / {res['total']} ({res['percent']}%)**", ""]
+    for r in res["per_question"]:
+        marker = "✅ Correct" if r["correct"] else "❌ Incorrect"
+        chosen = r.get("chosen") or "—"
+        lines.append(f"- **{r['question_id']}:** {marker}  (your answer: *{chosen}*)")
+    return "\n".join(lines)
+
+
+def _reveal_from_radios(quiz_id: str, *radio_values) -> tuple[str, list]:
+    """Reveal per-question feedback after Submit/Show Answers.
+
+    Returns (markdown_block, image_paths_for_gallery). Builds a human-readable
+    review including the student's answer, correct answer, explanation,
+    citation, and supporting excerpt; slide images are returned separately for
+    the Gradio gallery."""
+    from rag.quiz import get_quiz, EvidenceCatalog
+    quiz = get_quiz(quiz_id)
+    if quiz is None:
+        return "❌ Unknown quiz. Generate a quiz first.", []
+    catalog = _QUIZ_CATALOGS.get(quiz_id) or EvidenceCatalog()
+    answers = _build_answers_from_radios(quiz, list(radio_values))
+
+    blocks = []
+    images: list[str] = []
+    for q in quiz.questions:
+        chosen = answers.get(q.question_id) or "—"
+        blocks.append(
+            f"**{q.question_id}.** {q.prompt}\n\n"
+            f"- Your answer: *{chosen}*\n"
+            f"- ✅ Correct answer: **{q.correct_answer}**\n"
+            f"- 💬 Explanation: {q.explanation}\n")
+        for sid in q.source_ids:
+            entry = catalog.entry(sid)
+            if entry is None:
+                continue
+            blocks.append(
+                f"- 📄 Citation: *{entry.filename} · page {entry.page_no}*\n"
+                f"- 📝 Supporting excerpt: > {entry.excerpt}\n")
+            if entry.image_path and str(entry.image_path) not in images:
+                images.append(str(entry.image_path))
+        blocks.append("---")
+    return "\n".join(blocks), images
+
+
+def _panel_prompt(q: dict) -> str:
+    return f"**{q.get('question_id', '?')}.** {q.get('prompt', '')}"
+
+
+def _populate_question_panel(quiz_data: dict, index: int) -> tuple:
+    """Return (visible, markdown, image_html, radio) updates for one panel.
+
+    Panels beyond the generated question count are hidden and disabled.
+    """
+    questions = quiz_data.get("questions", []) if isinstance(quiz_data, dict) else []
+    if index < len(questions):
+        q = questions[index]
+        prompt = _panel_prompt(q)
+        img_html = ""
+        if q.get("image_url"):
+            img_html = (
+                f'<img src="{q["image_url"]}" height="170" alt="slide" '
+                f'style="border:1px solid var(--border);border-radius:6px">')
+        radio = gr.update(
+            choices=list(q.get("options", [])), value=None,
+            interactive=True)
+        return (gr.update(visible=True), prompt, img_html, radio)
+    return (gr.update(visible=False), "", "",
+            gr.update(choices=[], value=None, interactive=False))
+
+
+# --------------------------------------------------------------------------- #
 # Gradio app
 # --------------------------------------------------------------------------- #
 def build_app(settings: Settings | None = None) -> gr.Blocks:
@@ -355,6 +533,89 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                     ask_question,
                     inputs=[question_input],
                     outputs=[answer_out, sources_out, source_images, qa_status],
+                )
+
+            # ---------------- TAB 3: Practice Quiz (Issue #6) ----------------
+            with gr.Tab("📝 Practice Quiz"):
+                gr.Markdown("Generate a practice quiz grounded in the ingested "
+                            "course material. Answer with the on-screen options — "
+                            "no JSON. The answer key is fixed at generation and "
+                            "stays server-side until you submit.")
+                with gr.Row():
+                    quiz_topic = gr.Textbox(
+                        label="Topic (blank = Auto)",
+                        placeholder="e.g. Transformer attention, temperature sampling, …")
+                    quiz_count = gr.Number(
+                        label="Number of questions", value=5, precision=0, minimum=1,
+                        maximum=MAX_QUIZ_QUESTIONS)
+                    gen_quiz_btn = gr.Button("Generate Quiz", variant="primary")
+                quiz_status = gr.Markdown("Status: —")
+                quiz_id_state = gr.State("")           # opaque UUID (never public data)
+                quiz_public_data = gr.State({})        # public questions for rendering
+
+                # Pre-created question panels (real Gradio controls — no raw HTML
+                # radios). Each holds an optional question label, an optional
+                # slide image, and a gr.Radio for the student's choice.
+                _q_panels: list = []      # (column, markdown, image_html, radio)
+                _q_radios: list = []
+                for _qi in range(MAX_QUIZ_QUESTIONS):
+                    with gr.Column(visible=False) as _qcol:
+                        _qmd = gr.Markdown("")
+                        _qimg = gr.HTML("")
+                        _qradio = gr.Radio(
+                            label=f"Question {_qi + 1}", choices=[],
+                            interactive=False)
+                    _q_panels.append((_qcol, _qmd, _qimg, _qradio))
+                    _q_radios.append(_qradio)
+
+                with gr.Row():
+                    submit_quiz_btn = gr.Button("Submit Quiz", variant="primary")
+                    show_answers_btn = gr.Button("Show Answers")
+                score_out = gr.Markdown("Score: —")
+                review_out = gr.Markdown("Review: —")
+                review_images = gr.Gallery(
+                    label="Supporting slide/page images", columns=1, height="auto")
+
+                # Generate: store opaque id + public data, then populate panels.
+                gen_quiz_btn.click(
+                    generate_quiz_ui,
+                    inputs=[quiz_topic, quiz_count],
+                    outputs=[quiz_id_state, quiz_public_data, quiz_status],
+                )
+
+                # Use a lambda-free explicit wiring: a single callback that
+                # returns updates for all pre-created panels at once.
+                def _apply_panels(quiz_data):
+                    per_panel = [
+                        _populate_question_panel(quiz_data, i)
+                        for i in range(MAX_QUIZ_QUESTIONS)]
+                    # Gradio expects outputs grouped by component: all columns,
+                    # then all markdowns, then all images, then all radios.
+                    cols = [p[0] for p in per_panel]
+                    mds = [p[1] for p in per_panel]
+                    imgs = [p[2] for p in per_panel]
+                    rads = [p[3] for p in per_panel]
+                    return cols + mds + imgs + rads
+
+                gen_quiz_btn.click(
+                    _apply_panels,
+                    inputs=[quiz_public_data],
+                    outputs=[c for (c, _, _, _) in _q_panels] +
+                            [m for (_, m, _, _) in _q_panels] +
+                            [i for (_, _, i, _) in _q_panels] +
+                            [r for (_, _, _, r) in _q_panels],
+                )
+
+                # Submit uses ONLY the opaque quiz_id from state + radio values.
+                submit_quiz_btn.click(
+                    _grade_from_radios,
+                    inputs=[quiz_id_state] + _q_radios,
+                    outputs=[score_out],
+                )
+                show_answers_btn.click(
+                    _reveal_from_radios,
+                    inputs=[quiz_id_state] + _q_radios,
+                    outputs=[review_out, review_images],
                 )
 
     return demo
