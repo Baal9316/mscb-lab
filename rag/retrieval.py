@@ -223,6 +223,35 @@ class TextIndex:
     def chunk_count(self) -> int:
         return len(self._chunks)
 
+    def sample_texts(self, limit: int = 10) -> list[str]:
+        """Return a diverse spread of chunk texts (one per page when possible)
+        for downstream topic generation. Keeps only non-empty chunks and
+        spreads across pages."""
+        out: list[str] = []
+        seen_pages: set[tuple] = set()
+        for chunk in self._chunks:
+            key = (chunk.get("document_id"), chunk.get("page_no"))
+            if key in seen_pages:
+                continue
+            txt = str(chunk.get("text", "")).strip()
+            if not txt:
+                continue
+            seen_pages.add(key)
+            out.append(txt)
+            if len(out) >= limit:
+                break
+        # If a single page has few chunks, top up from remaining chunks.
+        if len(out) < limit and len(self._chunks):
+            added = set()
+            for chunk in self._chunks:
+                if len(out) >= limit:
+                    break
+                txt = str(chunk.get("text", "")).strip()
+                if not txt or any(txt == c for c in out):
+                    continue
+                out.append(txt)
+        return out[:limit]
+
     # ------------------------------------------------------------------ #
     # Retrieval
     # ------------------------------------------------------------------ #

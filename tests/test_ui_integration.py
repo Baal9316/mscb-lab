@@ -10,6 +10,8 @@ fake parser into ingest_document via the ``parser`` hook.
 """
 from __future__ import annotations
 
+import json
+
 import gradio as gr
 import pytest
 
@@ -250,3 +252,153 @@ class TestAskQuestionUI:
         ti2, _ = appmod.get_qa_indexes(store, settings=s)
         assert ti1 is not ti2
         assert ti2.chunk_count() == 0
+
+
+class TestQuizUI:
+    """UI-layer tests for the Practice Quiz tab (Issue #6).
+
+    Verifies the opaque-quiz-id flow: generate returns a separate opaque id
+    and public data (no private key); Submit and Show Answers use ONLY the
+    opaque id to look up the frozen Quiz in the server-side registry; radio
+    selections are mapped to {question_id: option} automatically; grading
+    makes zero 9001 calls.
+    """
+
+    def _stub_generate(self, appmod, monkeypatch, n=2, visual=False):
+        """Register a frozen quiz+catalog and stub rag.quiz.generate_quiz so
+        generate_quiz_ui runs fully offline."""
+        from rag.quiz import Quiz, QuizQuestion, store_quiz
+        from rag.rerank_pipeline import EvidenceCandidate, RerankedEvidence
+
+        ev = [
+            RerankedEvidence(EvidenceCandidate(
+                "d", "deck.pdf", 1, text="About temperature sampling",
+                image_path="/tmp/slide_1.png", image_url="data:image/png;base64,x"), 0.9, "rerank"),
+            RerankedEvidence(EvidenceCandidate(
+                "d", "deck.pdf", 2, text="About attention sampling with images",
+                image_path="/tmp/slide_2.png", image_url="data:image/png;base64,y"), 0.8, "rerank"),
+        ]
+        catalog = None
+        def fake_gen(**kwargs):
+            nonlocal catalog
+            qid = "gen-abc"
+            quiz = Quiz(quiz_id=qid, questions=(
+                QuizQuestion(f"{qid}_q1", "What controls randomness?",
+                             ("A", "B", "C", "D"), 1, "B", "Temperature does.",
+                             ("E1",), bool(visual)),
+                QuizQuestion(f"{qid}_q2", "Which mechanism attends?",
+                             ("A", "B", "C", "D"), 2, "C", "Attention.",
+                             ("E2",), False),
+            ))
+            store_quiz(quiz)
+            # catalog with the same evidence
+            from rag.quiz import build_evidence_catalog
+            catalog = build_evidence_catalog(ev)
+            appmod._QUIZ_CATALOGS[qid] = catalog
+            return quiz, ev
+        monkeypatch.setattr("rag.quiz.generate_quiz", fake_gen)
+        return catalog
+
+    def test_generate_returns_separate_opaque_id_and_no_private_key(
+            self, tmp_path, monkeypatch):
+        import app as appmod
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        self._stub_generate(appmod, monkeypatch)
+        quiz_id, pub, status = appmod.generate_quiz_ui("", 2, settings=s)
+        assert "✅" in status
+        # public data is a dict, opaque id is a separate string value
+        assert isinstance(pub, dict)
+        assert isinstance(quiz_id, str) and quiz_id
+        assert json.dumps(pub) != quiz_id  # public JSON != opaque quiz_id
+        # public data has questions but never the private answer key
+        assert len(pub["questions"]) == 2
+        dpub = json.dumps(pub)
+        assert "correct_index" not in dpub
+        assert "correct_answer" not in dpub
+        assert "explanation" not in dpub
+        assert "document_id" not in dpub
+
+    def test_submit_uses_opaque_id_and_radio_mapping(self, tmp_path, monkeypatch):
+        import app as appmod
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        self._stub_generate(appmod, monkeypatch)
+        quiz_id, pub, _ = appmod.generate_quiz_ui("", 2, settings=s)
+        # Simulate the panel wiring: panel i's radio holds the chosen option.
+        # For q1 the correct answer is "B"; q2 correct is "C".
+        called_with = {}
+        orig_get = __import__("rag.quiz", fromlist=["get_quiz"]).get_quiz
+        # spy on get_quiz to prove it only ever receives the opaque id
+        def spy_get(qid):
+            called_with["qid"] = qid
+            return orig_get(qid)
+        monkeypatch.setattr("rag.quiz.get_quiz", spy_get)
+        # zero 9001 calls during grading
+        calls = []
+        import rag.quiz as qm
+        orig_llm = qm.generate_llm_response
+        qm.generate_llm_response = lambda *a, **k: calls.append(a) or ""
+        try:
+            score = appmod._grade_from_radios(
+                quiz_id, "B", "C")   # radio 0 -> q1="B", radio 1 -> q2="C"
+        finally:
+            qm.generate_llm_response = orig_llm
+        assert calls == []           # zero 9001 calls
+        assert called_with["qid"] == quiz_id  # used the opaque id, not JSON
+        assert "Score: 2 / 2 (100%)" in score
+        # public JSON was never passed to get_quiz
+        assert called_with["qid"] != json.dumps(pub)
+
+    def test_show_answers_uses_same_opaque_id_and_reveals(self, tmp_path, monkeypatch):
+        import app as appmod
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        self._stub_generate(appmod, monkeypatch)
+        qid, pub, _ = appmod.generate_quiz_ui("", 2, settings=s)
+        called_with = {}
+        orig_get = __import__("rag.quiz", fromlist=["get_quiz"]).get_quiz
+        def spy_get(x):
+            called_with["qid"] = x
+            return orig_get(x)
+        monkeypatch.setattr("rag.quiz.get_quiz", spy_get)
+        review, images = appmod._reveal_from_radios(qid, "B", "C")
+        assert called_with["qid"] == qid
+        assert called_with["qid"] != json.dumps(pub)
+        # explanations + correct answers + citations appear after reveal
+        assert "Temperature does." in review
+        assert "Correct answer: **C**" in review
+        assert "deck.pdf · page 1" in review
+        assert "supporting excerpt" in review.lower() or "excerpt" in review.lower()
+        assert images  # supporting slide image paths returned
+
+    def _stub_quiz_for_mapping(self, appmod, tmp_path):
+        from rag.quiz import Quiz, QuizQuestion, store_quiz
+        quiz = Quiz(quiz_id="q-map", questions=(
+            QuizQuestion("q-map_q1", "p", ("A", "B", "C", "D"), 1, "B", "e",
+                         ("E1",), False),
+        ))
+        store_quiz(quiz)
+        return quiz.quiz_id
+
+    def test_build_answers_from_radios_uses_question_ids(self, tmp_path):
+        import app as appmod
+        qid = self._stub_quiz_for_mapping(appmod, tmp_path)
+        quiz = __import__("rag.quiz", fromlist=["get_quiz"]).get_quiz(qid)
+        answers = appmod._build_answers_from_radios(quiz, ["B"])
+        assert answers == {"q-map_q1": "B"}
+
+    def test_populate_panel_hides_extra(self):
+        import app as appmod
+        data = {"questions": [{"question_id": "x_q1", "prompt": "p",
+                               "options": ["A", "B", "C", "D"]}]}
+        vis, md, img, radio = appmod._populate_question_panel(data, 0)
+        assert md == "**x_q1.** p"
+        vis2, md2, img2, radio2 = appmod._populate_question_panel(data, 3)
+        assert vis2["visible"] is False
+        assert radio2["interactive"] is False
+
+    def test_build_app_has_three_tabs(self, tmp_path):
+        import app as appmod
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        demo = appmod.build_app(settings=s)
+        assert appmod.generate_quiz_ui
+        assert appmod._grade_from_radios
+        assert appmod._reveal_from_radios

@@ -48,6 +48,10 @@ class Settings:
     llm_model: str = field(default_factory=lambda: _get(
         "LLM_MODEL", "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"))
 
+    #: max_tokens for the single 9001 quiz-generation call (whole quiz).
+    quiz_max_tokens: int = field(default_factory=lambda: int(
+        _get("QUIZ_MAX_TOKENS", "2500")))
+
     #: Directory where uploaded documents, rendered pages and indexes live.
     data_dir: Path = field(default_factory=lambda: Path(
         _get("DATA_DIR", str(_DEFAULT_DATA_DIR))))
