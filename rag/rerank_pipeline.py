@@ -42,6 +42,7 @@ class EvidenceCandidate:
     text: str = ""
     image_path: str = ""
     image_url: str = ""
+    _text_score: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -106,7 +107,9 @@ def _collect_candidates(text_idx: TextIndex, visual_idx: VisualIndex,
     """
     merged: dict[tuple, EvidenceCandidate] = {}
 
-    # Text candidates (BM25 + dense fused already inside TextIndex.search)
+    # Text candidates (BM25 + dense fused already inside TextIndex.search).
+    # Multiple sub-chunks of the same page may be retrieved; keep the
+    # highest-ranked (strongest) chunk as this page's text evidence.
     try:
         text_hits = text_idx.search(query, top_k=text_pool)
     except EmptyIndexError:
@@ -119,10 +122,14 @@ def _collect_candidates(text_idx: TextIndex, visual_idx: VisualIndex,
                 filename=tc.filename,
                 page_no=tc.page_no,
                 text=tc.text,
+                _text_score=tc.score,
             )
         else:
-            if tc.text and not merged[key].text:
-                merged[key].text = tc.text
+            # Replace with a higher-scoring text chunk if one appears later.
+            cand = merged[key]
+            if tc.score > cand._text_score:
+                cand.text = tc.text
+                cand._text_score = tc.score
 
     # Visual candidates
     try:
