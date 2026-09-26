@@ -42,6 +42,12 @@ class Settings:
     document_parser_model: str = field(default_factory=lambda: _get(
         "DOCUMENT_PARSER_MODEL", "dots.mocr"))
 
+    #: Answer-generation (vision) LLM endpoint + model (9001).
+    llm_url: str = field(default_factory=lambda: _get(
+        "LLM_URL", "http://dobolyi.com:9001/v1/chat/completions"))
+    llm_model: str = field(default_factory=lambda: _get(
+        "LLM_MODEL", "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"))
+
     #: Directory where uploaded documents, rendered pages and indexes live.
     data_dir: Path = field(default_factory=lambda: Path(
         _get("DATA_DIR", str(_DEFAULT_DATA_DIR))))
