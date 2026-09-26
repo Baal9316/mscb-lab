@@ -144,3 +144,109 @@ def test_helpers_are_wired_in_blocks():
     """Smoke test: the app also builds a Blocks object (UI wiring loads)."""
     s = __import__("app").build_app()  # settings default is fine
     assert isinstance(s, gr.Blocks)
+
+
+class TestAskQuestionUI:
+    def test_ask_question_empty(self):
+        import app as appmod
+        ans, sources, images, status = appmod.ask_question("")
+        assert "Please enter a question" in ans
+        assert "No question" in status
+
+    def test_ask_question_no_documents(self, tmp_path, monkeypatch):
+        import app as appmod
+        from rag.config import Settings
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        (tmp_path / "data").mkdir(exist_ok=True, parents=True)
+        monkeypatch.setattr(appmod, "get_settings", lambda: s)
+        ans, sources, images, status = appmod.ask_question("any question", settings=s)
+        assert "enough information" in ans.lower()
+        assert images == []
+
+    def _seed_one(self, tmp_path, settings):
+        from rag.models import Document, DocumentPage
+        store = __import__("rag.store", fromlist=["DocumentStore"]).DocumentStore(settings.data_dir)
+        img = tmp_path / "a.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\xAA" * 8)
+        store.add(Document(
+            document_id="docA", filename="a.pdf", sha256="s1",
+            pages=[DocumentPage(document_id="docA", page_no=1, filename="a.pdf",
+                                extracted_text="The CPU is the worker that does the work",
+                                image_path=str(img),
+                                image_url=f"data:image/png;base64,{img.read_bytes().hex()}")]))
+        return store
+
+    def test_consecutive_questions_reuse_indexes(self, tmp_path, monkeypatch):
+        """Repeated questions with unchanged docs must reuse cached indexes."""
+        import app as appmod
+        from rag.config import Settings
+        import rag.retrieval as rt
+        from rag.embedding import EmbeddingResult
+        import math
+
+        def fake_text(texts, model=None, settings=None):
+            return [EmbeddingResult(
+                text=t, index=i,
+                vector=[math.sin(i + sum(ord(c) for c in t) * 0.01) for i in range(16)],
+            ) for i, t in enumerate(texts)]
+        monkeypatch.setattr(rt, "get_text_embedding", fake_text)
+
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        store = self._seed_one(tmp_path, s)
+        appmod.invalidate_qa_index_cache()
+        ti1, vi1 = appmod.get_qa_indexes(store, settings=s)
+        ti2, vi2 = appmod.get_qa_indexes(store, settings=s)
+        assert ti1 is ti2 and vi1 is vi2  # unchanged collection -> reused
+
+    def test_upload_invalidates_cached_indexes(self, tmp_path, monkeypatch):
+        import app as appmod
+        from rag.config import Settings
+        import rag.retrieval as rt
+        from rag.embedding import EmbeddingResult
+        import math
+
+        def fake_text(texts, model=None, settings=None):
+            return [EmbeddingResult(
+                text=t, index=i,
+                vector=[math.sin(i + sum(ord(c) for c in t) * 0.01) for i in range(16)],
+            ) for i, t in enumerate(texts)]
+        monkeypatch.setattr(rt, "get_text_embedding", fake_text)
+
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        store = self._seed_one(tmp_path, s)
+        appmod.invalidate_qa_index_cache()
+        ti1, _ = appmod.get_qa_indexes(store, settings=s)
+        # upload a NEW document (simulate via adding to store + invalidate like upload_pdf)
+        from rag.models import Document, DocumentPage
+        img2 = tmp_path / "b.png"; img2.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\xBB" * 8)
+        store.add(Document(
+            document_id="docB", filename="b.pdf", sha256="s2",
+            pages=[]))  # no pages so no re-embed cost; still changes fingerprint
+        appmod.invalidate_qa_index_cache()  # what upload_pdf calls
+        ti2, _ = appmod.get_qa_indexes(store, settings=s)
+        assert ti1 is not ti2  # rebuilt after upload
+
+    def test_delete_invalidates_cached_indexes(self, tmp_path, monkeypatch):
+        import app as appmod
+        from rag.config import Settings
+        import rag.retrieval as rt
+        from rag.embedding import EmbeddingResult
+        import math
+
+        def fake_text(texts, model=None, settings=None):
+            return [EmbeddingResult(
+                text=t, index=i,
+                vector=[math.sin(i + sum(ord(c) for c in t) * 0.01) for i in range(16)],
+            ) for i, t in enumerate(texts)]
+        monkeypatch.setattr(rt, "get_text_embedding", fake_text)
+
+        s = Settings(class_api_key="test-key", data_dir=tmp_path / "data")
+        store = self._seed_one(tmp_path, s)
+        appmod.invalidate_qa_index_cache()
+        ti1, _ = appmod.get_qa_indexes(store, settings=s)
+        store.delete("docA")
+        appmod.invalidate_qa_index_cache()  # what delete_document calls
+        # After invalidation, next get rebuilds to empty collection.
+        ti2, _ = appmod.get_qa_indexes(store, settings=s)
+        assert ti1 is not ti2
+        assert ti2.chunk_count() == 0

@@ -42,6 +42,7 @@ class EvidenceCandidate:
     text: str = ""
     image_path: str = ""
     image_url: str = ""
+    chunk_index: int = 0
     _text_score: float = 0.0
 
     def to_dict(self) -> dict:
@@ -52,6 +53,7 @@ class EvidenceCandidate:
             "text": self.text,
             "image_path": self.image_path,
             "image_url": self.image_url,
+            "chunk_index": self.chunk_index,
         }
 
     @property
@@ -122,6 +124,7 @@ def _collect_candidates(text_idx: TextIndex, visual_idx: VisualIndex,
                 filename=tc.filename,
                 page_no=tc.page_no,
                 text=tc.text,
+                chunk_index=tc.chunk_index,
                 _text_score=tc.score,
             )
         else:
@@ -129,6 +132,7 @@ def _collect_candidates(text_idx: TextIndex, visual_idx: VisualIndex,
             cand = merged[key]
             if tc.score > cand._text_score:
                 cand.text = tc.text
+                cand.chunk_index = tc.chunk_index
                 cand._text_score = tc.score
 
     # Visual candidates

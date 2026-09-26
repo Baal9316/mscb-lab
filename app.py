@@ -32,6 +32,58 @@ def _new_store(settings: Settings | None = None) -> DocumentStore:
     return DocumentStore(s.data_dir)
 
 
+# --------------------------------------------------------------------------- #
+# Runtime QA index cache (Issue #5 performance).
+#
+# Building TextIndex/VisualIndex re-embeds every document through 9002/9003 on
+# each call, so we cache the built indexes at the app level and reuse them for
+# repeated questions with unchanged documents. The cache is invalidated by a
+# change in the collection fingerprint (doc id + uploaded_at), which changes
+# on upload or delete.
+# --------------------------------------------------------------------------- #
+_QA_CACHE: dict = {}
+
+
+def _collection_fingerprint(store: DocumentStore) -> tuple:
+    """Stable signature of the current document collection."""
+    docs = store.list_all()
+    sig = tuple(sorted((d.document_id, d.uploaded_at) for d in docs))
+    return sig
+
+
+def get_qa_indexes(store: DocumentStore,
+                   settings: Settings | None = None):
+    """Return cached or freshly-built (TextIndex, VisualIndex).
+
+    Reuses the runtime indexes when the collection is unchanged; rebuilds only
+    when the fingerprint changes (i.e. after an upload or delete).
+    """
+    s = settings or get_settings()
+    fingerprint = _collection_fingerprint(store)
+
+    cached = _QA_CACHE.get("indexes")
+    if cached and cached.get("fingerprint") == fingerprint:
+        return cached["text_idx"], cached["visual_idx"]
+
+    from rag.retrieval import TextIndex
+    from rag.visual_retrieval import VisualIndex
+
+    text_idx = TextIndex(store, settings=s)
+    text_idx.rebuild()
+    visual_idx = VisualIndex(store, settings=s)
+    _QA_CACHE["indexes"] = {
+        "fingerprint": fingerprint,
+        "text_idx": text_idx,
+        "visual_idx": visual_idx,
+    }
+    return text_idx, visual_idx
+
+
+def invalidate_qa_index_cache() -> None:
+    """Force a rebuild on the next question (used after upload/delete in tests)."""
+    _QA_CACHE.pop("indexes", None)
+
+
 def upload_pdf(file_path, settings: Settings | None = None) -> str:
     """Upload a PDF via the Milestone 1 ingest_document backend.
 
@@ -71,6 +123,9 @@ def upload_pdf(file_path, settings: Settings | None = None) -> str:
         doc = ingest_document(path, store=store, settings=s)
     except Exception as exc:  # noqa: BLE001 - surface safely to the user
         return f"Upload failed: {exc}"
+
+    # New document added -> cached QA indexes are stale; force a rebuild.
+    invalidate_qa_index_cache()
 
     failed = sum(1 for p in doc.pages if p.parse_status == "failed")
     msg = (f"✅ Uploaded '{doc.filename}' — {doc.page_count} pages "
@@ -163,79 +218,144 @@ def delete_document(doc_label: str | None,
     store = _new_store(settings)
     document_id = _id_from_label(doc_label)
     if store.delete(document_id):
+        invalidate_qa_index_cache()  # deleted doc -> QA indexes stale
         return f"🗑️ Deleted document {document_id}."
     return "Document not found (it may already be deleted)."
+
+
+def ask_question(question: str, settings: Settings | None = None) -> tuple:
+    """Ask a question through the full retrieval+rerank+QA pipeline.
+
+    Returns (answer_text, sources_block, images, status). ``images`` is a list
+    of source image file paths (one per cited source) for the UI to render.
+    """
+    from rag.qa import answer_question, QAGenerationError
+
+    if not question or not question.strip():
+        return ("Please enter a question.", "", [], "⚠️ No question")
+    s = settings or get_settings()
+    store = _new_store(s)
+
+    try:
+        ti, vi = get_qa_indexes(store, settings=s)
+    except Exception as exc:  # noqa: BLE001
+        return (f"Could not build retrieval indexes: {exc}", "", [], "⚠️ Error")
+
+    try:
+        result = answer_question(question.strip(), ti, vi, settings=s)
+    except QAGenerationError as exc:
+        return (f"⚠️ Answer generation failed: {exc}", "", [],
+                "⚠️ Generation unavailable")
+    except Exception as exc:  # noqa: BLE001
+        return (f"⚠️ QA pipeline error: {exc}", "", [], "⚠️ Error")
+
+    if result.insufficient:
+        return (result.answer, "_(no sources — answer marked insufficient)_",
+                [], "ℹ️ Insufficient evidence")
+
+    lines = []
+    images = []
+    for src in result.sources:
+        lines.append(f"**{src.citation}**  — chunk {src.chunk_index}")
+        excerpt = (src.excerpt[:300] + "…") if len(src.excerpt) > 300 else src.excerpt
+        lines.append(f"> {excerpt}")
+        if src.image_path and Path(src.image_path).exists():
+            images.append(src.image_path)
+
+    sources_block = "\n\n".join(lines) if lines else "_(no sources cited)_"
+    status = "✅ Fallback used (reranker unavailable)" if result.used_fallback else "✅ OK"
+    return (result.answer, sources_block, images, status)
 
 
 # --------------------------------------------------------------------------- #
 # Gradio app
 # --------------------------------------------------------------------------- #
 def build_app(settings: Settings | None = None) -> gr.Blocks:
-    """Construct the Gradio UI. ``settings`` is injectable for tests."""
+    """Construct the Gradio UI. ``settings`` is injectable for tests.
+
+    Two tabs: (1) Document manager (Milestone 1), (2) Ask a Question (Issue #5).
+    """
     s = settings or get_settings()
 
-    with gr.Blocks(title="Course Material Manager – Milestone 1") as demo:
+    with gr.Blocks(title="Course Material Manager – MBAX 6418") as demo:
         gr.Markdown("# 📚 Course Material Manager")
-        gr.Markdown("Milestone 1 UI — upload, preview and manage course PDFs. "
-                    "Ingestion backend from `rag.ingest`.")
+        gr.Markdown("Hybrid multimodal RAG over course materials — manage course "
+                    "PDFs and ask grounded questions with citations.")
 
         if not s.is_api_key_set:
-            gr.Markdown("**⚠️ CLASS_API_KEY is not set.** Uploads may fail silently "
-                        "on OCR. Set it in a local `.env` (see `.env.example`) "
-                        "and restart.")
+            gr.Markdown("**⚠️ CLASS_API_KEY is not set.** Set it in a local `.env` "
+                        "(see `.env.example`) and restart.")
 
-        with gr.Row():
-            with gr.Column(scale=2):
-                gr.Markdown("### 1. Upload a PDF")
-                file_input = gr.File(label="PDF file", file_types=[".pdf"],
-                                     type="filepath")
-                upload_btn = gr.Button("Upload", variant="primary")
-                upload_result = gr.Textbox(label="Upload result", lines=3,
-                                           interactive=False)
+        with gr.Tabs():
+            # ---------------- TAB 1: Document manager (unchanged) ---------------
+            with gr.Tab("📁 Document Manager"):
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 1. Upload a PDF")
+                        file_input = gr.File(label="PDF file", file_types=[".pdf"],
+                                             type="filepath")
+                        upload_btn = gr.Button("Upload", variant="primary")
+                        upload_result = gr.Textbox(label="Upload result", lines=3,
+                                                   interactive=False)
 
-                gr.Markdown("### 2. Manage documents")
-                doc_dropdown = gr.Dropdown(label="Document", choices=[],
-                                           interactive=True)
-                refresh_btn = gr.Button("↻ Refresh list")
-                doc_list = gr.Textbox(label="In collection", lines=5,
-                                      interactive=False)
-                delete_btn = gr.Button("🗑️ Delete selected document",
-                                       variant="stop")
-                delete_result = gr.Textbox(label="Delete result", lines=1,
-                                           interactive=False)
+                        gr.Markdown("### 2. Manage documents")
+                        doc_dropdown = gr.Dropdown(label="Document", choices=[],
+                                                   interactive=True)
+                        refresh_btn = gr.Button("↻ Refresh list")
+                        doc_list = gr.Textbox(label="In collection", lines=5,
+                                              interactive=False)
+                        delete_btn = gr.Button("🗑️ Delete selected document",
+                                               variant="stop")
+                        delete_result = gr.Textbox(label="Delete result", lines=1,
+                                                   interactive=False)
 
-            with gr.Column(scale=3):
-                gr.Markdown("### 3. Page preview")
-                page_dropdown = gr.Dropdown(label="Page", choices=[],
-                                            interactive=True)
-                page_status = gr.Markdown("Status: —")
-                page_image = gr.Image(label="Original rendered slide/page",
-                                      type="filepath", height=480)
-                page_text = gr.Textbox(label="Extracted text", lines=10,
-                                       interactive=False)
+                    with gr.Column(scale=3):
+                        gr.Markdown("### 3. Page preview")
+                        page_dropdown = gr.Dropdown(label="Page", choices=[],
+                                                    interactive=True)
+                        page_status = gr.Markdown("Status: —")
+                        page_image = gr.Image(label="Original rendered slide/page",
+                                              type="filepath", height=480)
+                        page_text = gr.Textbox(label="Extracted text", lines=10,
+                                               interactive=False)
 
-        # Wiring
-        upload_btn.click(upload_pdf, inputs=[file_input], outputs=[upload_result])
-        upload_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+                # Document-manager wiring
+                upload_btn.click(upload_pdf, inputs=[file_input], outputs=[upload_result])
+                upload_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+                refresh_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+                doc_dropdown.change(get_pages_for_document, inputs=[doc_dropdown],
+                                    outputs=[page_dropdown])
+                doc_dropdown.change(view_page, inputs=[doc_dropdown, page_dropdown],
+                                    outputs=[page_image, page_text, page_status])
+                page_dropdown.change(view_page, inputs=[doc_dropdown, page_dropdown],
+                                    outputs=[page_image, page_text, page_status])
+                delete_btn.click(delete_document, inputs=[doc_dropdown],
+                                 outputs=[delete_result])
+                delete_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
 
-        refresh_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+            # ---------------- TAB 2: Ask a Question (Issue #5) -----------------
+            with gr.Tab("❓ Ask a Question"):
+                gr.Markdown("Ask about the ingested course materials. The answer is "
+                            "grounded in retrieved evidence with trusted citations.")
+                with gr.Column():
+                    question_input = gr.Textbox(label="Ask a Question", lines=3,
+                                                placeholder="e.g. What is the CPU in a computer?")
 
-        doc_dropdown.change(get_pages_for_document, inputs=[doc_dropdown],
-                            outputs=[page_dropdown])
-        doc_dropdown.change(
-            view_page,
-            inputs=[doc_dropdown, page_dropdown],
-            outputs=[page_image, page_text, page_status],
-        )
-        page_dropdown.change(
-            view_page,
-            inputs=[doc_dropdown, page_dropdown],
-            outputs=[page_image, page_text, page_status],
-        )
+                    gr.Markdown(
+                        "Optional: attach a slide image to ask a visual question."
+                    )
+                    ask_btn = gr.Button("Ask", variant="primary")
+                    qa_status = gr.Markdown("Status: —")
+                    answer_out = gr.Textbox(label="Answer", lines=6, interactive=False)
+                    sources_out = gr.Markdown(label="Sources")
+                    source_images = gr.Gallery(label="Supporting slide/page images",
+                                               columns=1, height="auto")
 
-        delete_btn.click(delete_document, inputs=[doc_dropdown],
-                         outputs=[delete_result])
-        delete_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+                ask_btn.click(
+                    ask_question,
+                    inputs=[question_input],
+                    outputs=[answer_out, sources_out, source_images, qa_status],
+                )
 
     return demo
 
