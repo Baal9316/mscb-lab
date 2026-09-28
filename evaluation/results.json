@@ -1,0 +1,598 @@
+{
+  "meta": {
+    "text_index_build_latency": 0.015,
+    "visual_index_build_latency": 25.3386,
+    "top_k": 5
+  },
+  "results": [
+    {
+      "question_id": "q1",
+      "question": "According to the course material, how do larger models and newer (more recent) models each relate to performance?",
+      "type": "text",
+      "expected_facts": [
+        "larger models tend to perform better",
+        "more recent models tend to perform better"
+      ],
+      "expected_pages": [
+        6
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "According to the course material, larger models tend to perform better, and more recent (newer) models also tend to perform better.",
+      "retrieved_pages": [
+        4,
+        6,
+        15,
+        21,
+        34
+      ],
+      "cited_pages": [
+        6
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 2.7794,
+      "generation_latency": 0.4958,
+      "total_latency": 3.2754
+    },
+    {
+      "question_id": "q1",
+      "question": "According to the course material, how do larger models and newer (more recent) models each relate to performance?",
+      "type": "text",
+      "expected_facts": [
+        "larger models tend to perform better",
+        "more recent models tend to perform better"
+      ],
+      "expected_pages": [
+        6
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "According to the course material, larger models tend to perform better, and more recent (newer) models also tend to perform better.",
+      "retrieved_pages": [
+        6,
+        13,
+        17,
+        21,
+        24
+      ],
+      "cited_pages": [
+        6
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.915,
+      "generation_latency": 1.3282,
+      "total_latency": 5.2433
+    },
+    {
+      "question_id": "q2",
+      "question": "In a model name like Qwen3-Coder-30B-A3B-Instruct-FP8, what does the FP8 component indicate, and what is quantization?",
+      "type": "text",
+      "expected_facts": [
+        "FP8 is 8-bit",
+        "quantization scales and rounds model parameters",
+        "models trained at 16-bit can be reduced to 8-bit"
+      ],
+      "expected_pages": [
+        18,
+        15
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "In the model name Qwen3-Coder-30B-A3B-Instruct-FP8, the FP8 component indicates the model's quantization format, specifically 8-bit floating-point precision [1]. Quantization is a process of scaling and rounding model parameters to reduce their precision (e.g., from 16-bit to 8-bit or 4-bit), which makes the model smaller and potentially faster without significant accuracy degradation [2].",
+      "retrieved_pages": [
+        6,
+        15,
+        16,
+        18,
+        21
+      ],
+      "cited_pages": [
+        18,
+        15
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.7083,
+      "generation_latency": 1.5623,
+      "total_latency": 5.2709
+    },
+    {
+      "question_id": "q2",
+      "question": "In a model name like Qwen3-Coder-30B-A3B-Instruct-FP8, what does the FP8 component indicate, and what is quantization?",
+      "type": "text",
+      "expected_facts": [
+        "FP8 is 8-bit",
+        "quantization scales and rounds model parameters",
+        "models trained at 16-bit can be reduced to 8-bit"
+      ],
+      "expected_pages": [
+        18,
+        15
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "In the model name Qwen3-Coder-30B-A3B-Instruct-FP8, the FP8 component indicates that the model uses FP8 quantization. Quantization is a process of scaling and rounding model parameters to reduce their precision (e.g., from 16-bit to 8-bit or 4-bit), which makes the model smaller and potentially faster without significant accuracy degradation.",
+      "retrieved_pages": [
+        15,
+        16,
+        18,
+        22,
+        28
+      ],
+      "cited_pages": [
+        18,
+        15
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.3417,
+      "generation_latency": 0.7612,
+      "total_latency": 1.103
+    },
+    {
+      "question_id": "q3",
+      "question": "According to the course material, which exact tools are recommended for technical users running local models on a GPU?",
+      "type": "text",
+      "expected_facts": [
+        "vLLM"
+      ],
+      "expected_pages": [
+        26
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "According to the course material, the tools recommended for technical users running local models on a GPU are vLLM and SGLang.",
+      "retrieved_pages": [
+        15,
+        19,
+        26,
+        29,
+        34
+      ],
+      "cited_pages": [
+        26
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.3344,
+      "generation_latency": 0.4859,
+      "total_latency": 0.8204
+    },
+    {
+      "question_id": "q3",
+      "question": "According to the course material, which exact tools are recommended for technical users running local models on a GPU?",
+      "type": "text",
+      "expected_facts": [
+        "vLLM"
+      ],
+      "expected_pages": [
+        26
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "vLLM and SGLang",
+      "retrieved_pages": [
+        16,
+        19,
+        24,
+        25,
+        26
+      ],
+      "cited_pages": [
+        26
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.2047,
+      "generation_latency": 1.1967,
+      "total_latency": 4.4015
+    },
+    {
+      "question_id": "q4",
+      "question": "What is 'context' in the course material, and how is it measured?",
+      "type": "text",
+      "expected_facts": [
+        "how much text or other information a model can access",
+        "measured in tokens",
+        "referred to as context length or context window"
+      ],
+      "expected_pages": [
+        8
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "Context refers to how much text or other information a model can access while generating subsequent tokens, effectively providing \"working memory\" for the model to remember and work with before forgetting. It is measured in tokens (text chunks) and is referred to as context length or context window, covering both input and output tokens.",
+      "retrieved_pages": [
+        8,
+        9,
+        10,
+        21,
+        23
+      ],
+      "cited_pages": [
+        8,
+        23
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.2724,
+      "generation_latency": 1.1547,
+      "total_latency": 4.4272
+    },
+    {
+      "question_id": "q4",
+      "question": "What is 'context' in the course material, and how is it measured?",
+      "type": "text",
+      "expected_facts": [
+        "how much text or other information a model can access",
+        "measured in tokens",
+        "referred to as context length or context window"
+      ],
+      "expected_pages": [
+        8
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "Context refers to the amount of text or other information a model can access while generating subsequent tokens, effectively providing 'working memory' for what the model can remember and work with. It is measured in tokens and is referred to as context length or context window, covering both input and output tokens.",
+      "retrieved_pages": [
+        8,
+        10,
+        21,
+        23,
+        34
+      ],
+      "cited_pages": [
+        8
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.334,
+      "generation_latency": 0.5437,
+      "total_latency": 0.8778
+    },
+    {
+      "question_id": "q5",
+      "question": "Find the meme about Vibe Coding on 'Prod' in the course slides. What does it show?",
+      "type": "visual",
+      "expected_facts": [
+        "Vibe Coding on Prod",
+        "production-grade enterprise app"
+      ],
+      "expected_pages": [
+        33
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The course materials do not contain a meme about Vibe Coding specifically on 'Prod'. Evidence [2] contains a meme about 'Vibe Coding' (referencing Andrej Karpathy's definition from Evidence [1]), but it depicts a developer building a SaaS with Cursor and subsequently getting attacked by users (e.g., API key abuse, database spam), not specifically about the state of the code in production ('Prod').",
+      "retrieved_pages": [
+        28,
+        29,
+        30,
+        34,
+        40
+      ],
+      "cited_pages": [],
+      "correct": false,
+      "source_hit": false,
+      "insufficient_correct": false,
+      "insufficient": true,
+      "visual_retrieval_hit": false,
+      "visual_citation_hit": false,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.3468,
+      "generation_latency": 0.9006,
+      "total_latency": 1.2475
+    },
+    {
+      "question_id": "q5",
+      "question": "Find the meme about Vibe Coding on 'Prod' in the course slides. What does it show?",
+      "type": "visual",
+      "expected_facts": [
+        "Vibe Coding on Prod",
+        "production-grade enterprise app"
+      ],
+      "expected_pages": [
+        33
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The meme shows the \"One Does Not Simply\" template featuring Boromir from Lord of the Rings. The text reads: \"ONE DOES NOT SIMPLY VIBE CODE A PRODUCTION-GRADE ENTERPRISE APP\".",
+      "retrieved_pages": [
+        27,
+        29,
+        30,
+        31,
+        33
+      ],
+      "cited_pages": [
+        33,
+        27
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": true,
+      "visual_citation_hit": true,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.6858,
+      "generation_latency": 1.3847,
+      "total_latency": 5.0706
+    },
+    {
+      "question_id": "q6",
+      "question": "According to the 'Iterating the Vibes' workflow diagram, what is the sequence of steps in the vibe coding process?",
+      "type": "visual",
+      "expected_facts": [
+        "Understand",
+        "Prompt",
+        "Prototype",
+        "Evaluate"
+      ],
+      "expected_pages": [
+        31
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The sequence of steps in the vibe coding process is: Understand, Prompt, Prototype, and Evaluate.",
+      "retrieved_pages": [
+        29,
+        30,
+        31,
+        33,
+        36
+      ],
+      "cited_pages": [
+        31,
+        36
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": true,
+      "visual_citation_hit": true,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 4.2838,
+      "generation_latency": 1.4413,
+      "total_latency": 5.7252
+    },
+    {
+      "question_id": "q6",
+      "question": "According to the 'Iterating the Vibes' workflow diagram, what is the sequence of steps in the vibe coding process?",
+      "type": "visual",
+      "expected_facts": [
+        "Understand",
+        "Prompt",
+        "Prototype",
+        "Evaluate"
+      ],
+      "expected_pages": [
+        31
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The sequence of steps in the vibe coding process, according to the 'Iterating the Vibes' workflow diagram, is: Understand, Vibe Coding, Prompt, Evaluate, Prototype.",
+      "retrieved_pages": [
+        11,
+        29,
+        31,
+        36,
+        40
+      ],
+      "cited_pages": [
+        31
+      ],
+      "correct": false,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": true,
+      "visual_citation_hit": false,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.374,
+      "generation_latency": 0.4747,
+      "total_latency": 0.8488
+    },
+    {
+      "question_id": "q7",
+      "question": "How does photosynthesis convert sunlight into chemical energy in chloroplasts?",
+      "type": "unanswerable",
+      "expected_facts": [],
+      "expected_pages": [],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The provided course materials do not contain information about how photosynthesis converts sunlight into chemical energy in chloroplasts. The evidence focuses on topics such as concurrency, context windows, speculative decoding, and coding model selection.",
+      "retrieved_pages": [
+        8,
+        13,
+        14,
+        21,
+        34
+      ],
+      "cited_pages": [],
+      "correct": true,
+      "source_hit": false,
+      "insufficient_correct": true,
+      "insufficient": true,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.3504,
+      "generation_latency": 0.5216,
+      "total_latency": 0.8721
+    },
+    {
+      "question_id": "q7",
+      "question": "How does photosynthesis convert sunlight into chemical energy in chloroplasts?",
+      "type": "unanswerable",
+      "expected_facts": [],
+      "expected_pages": [],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "The provided course materials do not contain information about photosynthesis or how it converts sunlight into chemical energy in chloroplasts. The materials focus on Large Language Models (LLMs) for coding.",
+      "retrieved_pages": [
+        2,
+        8,
+        19,
+        22,
+        23
+      ],
+      "cited_pages": [],
+      "correct": true,
+      "source_hit": false,
+      "insufficient_correct": true,
+      "insufficient": true,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.2765,
+      "generation_latency": 1.3945,
+      "total_latency": 4.6711
+    },
+    {
+      "question_id": "q8",
+      "question": "How do model providers clarify how up-to-date (or not) a model's training data is, per the course material?",
+      "type": "text",
+      "expected_facts": [
+        "knowledge cutoff date",
+        "training data"
+      ],
+      "expected_pages": [
+        5
+      ],
+      "approach": "B",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "Model providers clarify how up-to-date a model's training data is by including a \"knowledge cutoff date.\"",
+      "retrieved_pages": [
+        2,
+        5,
+        6,
+        8,
+        19
+      ],
+      "cited_pages": [
+        5
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 3.1453,
+      "generation_latency": 1.3744,
+      "total_latency": 4.5198
+    },
+    {
+      "question_id": "q8",
+      "question": "How do model providers clarify how up-to-date (or not) a model's training data is, per the course material?",
+      "type": "text",
+      "expected_facts": [
+        "knowledge cutoff date",
+        "training data"
+      ],
+      "expected_pages": [
+        5
+      ],
+      "approach": "A",
+      "top_k": 5,
+      "model": "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+      "answer": "Model providers clarify how up-to-date their training data is by including a \"knowledge cutoff date\".",
+      "retrieved_pages": [
+        5,
+        15,
+        25,
+        28,
+        34
+      ],
+      "cited_pages": [
+        5
+      ],
+      "correct": true,
+      "source_hit": true,
+      "insufficient_correct": false,
+      "insufficient": false,
+      "visual_retrieval_hit": null,
+      "visual_citation_hit": null,
+      "fallback_used": false,
+      "error": null,
+      "retrieval_latency": 0.6445,
+      "generation_latency": 0.4321,
+      "total_latency": 1.0767
+    }
+  ]
+}
