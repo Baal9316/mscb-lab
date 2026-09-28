@@ -38,3 +38,6 @@ data/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# local venvs
+.venv311/

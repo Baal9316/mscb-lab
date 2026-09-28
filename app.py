@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import gradio as gr
 
+from rag import converter
 from rag.config import Settings, get_settings
 from rag.ingest import DocumentStore, DocumentParserError, ingest_document
 
@@ -90,23 +91,43 @@ def invalidate_qa_index_cache() -> None:
 
 
 def upload_pdf(file_path, settings: Settings | None = None) -> str:
-    """Upload a PDF via the Milestone 1 ingest_document backend.
+    """Upload a PDF (or a .pptx deck, converted to PDF) via ingest_document.
 
     Returns a human-readable message. Duplicates are detected up front (by
-    SHA-256) and reported clearly without re-ingesting.
+    SHA-256) and reported clearly without re-ingesting. PowerPoint decks are
+    converted to PDF first via rag.converter (requires LibreOffice); native
+    PDFs skip conversion.
     """
     if not file_path:
-        return "Please select a PDF file first."
+        return "Please select a PDF or PowerPoint (.pptx) file first."
 
     path = Path(file_path)
-    if path.suffix.lower() != ".pdf":
-        return f"Only PDF files are supported (got '{path.suffix}')."
+    ext = path.suffix.lower()
+    if ext not in (".pdf", ".pptx"):
+        return (f"Unsupported type '{ext}'. Please upload a PDF, or a "
+                "PowerPoint deck (.pptx) which will be converted to PDF "
+                "automatically.")
 
     if not path.exists():
         return "The selected file could not be read."
 
     s = settings or get_settings()
     store = _new_store(s)
+
+    # PowerPoint: convert to PDF first (requires LibreOffice).
+    converted_from_pptx = ext == ".pptx"
+    if converted_from_pptx:
+        try:
+            path = converter.to_pdf(path, s.data_dir / "converted")
+        except converter.LibreOfficeNotFoundError:
+            return ("PowerPoint upload requires LibreOffice, which was not "
+                    "found. Install it with `brew install --cask libreoffice` "
+                    "(or download from libreoffice.org) and restart, or export "
+                    "the deck to PDF manually and upload that PDF instead.")
+        except converter.ConversionError as exc:
+            return f"PPTX conversion failed: {exc}"
+        except Exception as exc:  # noqa: BLE001 - surface safely to the user
+            return f"PPTX conversion failed: {exc}"
 
     try:
         sha256 = DocumentStore.sha256_of(path)
@@ -133,7 +154,8 @@ def upload_pdf(file_path, settings: Settings | None = None) -> str:
     invalidate_qa_index_cache()
 
     failed = sum(1 for p in doc.pages if p.parse_status == "failed")
-    msg = (f"✅ Uploaded '{doc.filename}' — {doc.page_count} pages "
+    note = " (converted from .pptx)" if converted_from_pptx else ""
+    msg = (f"✅ Uploaded '{doc.filename}'{note} — {doc.page_count} pages "
            f"(document {doc.document_id}).")
     if failed:
         msg += f"\n⚠️ {failed} page(s) could not be OCR-parsed (see page view)."

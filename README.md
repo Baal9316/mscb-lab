@@ -40,13 +40,60 @@ cp .env.example .env               # then put the real key in .env
 | `DOCUMENT_PARSER_URL` | Doc parser / OCR (9005, dots.mocr) | `http://dobolyi.com:9005/v1/chat/completions` |
 | `DATA_DIR` | Storage root | `<repo>/data` |
 
+## Supported formats & conversion (PowerPoint)
+
+The ingestion pipeline operates on **PDFs** (pages are rendered to images and
+OCR'd). To let users upload slides directly, the app also accepts **PowerPoint
+(`.pptx`)** files and converts them to PDF before rendering/OCR.
+
+| Upload format | How it's handled | Extra software needed |
+|---|---|---|
+| `.pdf` | Used directly (native). | — |
+| `.pptx` | Auto-converted to PDF via headless LibreOffice, then rendered/OCR'd (wired into `app.py` upload). | **LibreOffice** |
+| anything else (`.doc`, `.docx`, etc.) | Rejected; export to PDF first. | — |
+
+**Conversion step** (`rag/converter.py` → `to_pdf`):
+
+```bash
+soffice --headless --convert-to pdf --outdir <out_dir> <deck.pptx>
+```
+
+The resulting PDF follows the normal path: `render_pdf_pages()` → page PNGs →
+9005 OCR → stored per-page metadata. Native `.pdf` uploads skip conversion.
+Uploading the **same deck twice is not duplicated** — SHA-256 dedupe applies to
+the converted PDF, and the UI reports duplicates instead of re-ingesting.
+
+**Required software:** LibreOffice is the *only* extra dependency, and it's
+needed **only for `.pptx` uploads** — not for PDFs and not to run the test
+suite. Install it with Homebrew:
+
+```bash
+brew install --cask libreoffice
+```
+
+or download from <https://www.libreoffice.org/download/>. `rag/converter.py`
+locates `soffice` on `PATH` (with fallbacks for the standard macOS install
+location) and both the app and the converter raise a clear, actionable error
+if it's missing.
+
+**Workaround (no install):** manually export the deck to PDF in PowerPoint
+(`File > Export > PDF`) and upload the PDF — fully supported.
+
+**Verification:** after conversion, rendered slide images and their extracted
+text should be visually checked against the original deck (fonts/layout
+fidelity). `convert_demo.py` converts a sample deck and emits a slide-viewer
+HTML for inspection.
+
 ## Tests
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-The suite runs fully offline — the 9005 parser client's HTTP layer is mocked.
+The suite runs fully offline — the 9005 parser client's HTTP layer is mocked,
+and converter tests cover the passthrough/error paths without requiring
+LibreOffice. A live conversion is exercised by `convert_demo.py` (requires
+LibreOffice installed).
 
 ## Roadmap
 

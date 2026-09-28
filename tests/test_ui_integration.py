@@ -83,7 +83,16 @@ class TestUpload:
         s = _settings(tmp_path)
         import app as appmod
         f = tmp_path / "notes.txt"; f.write_text("hi")
-        assert "Only PDF" in appmod.upload_pdf(str(f), settings=s)
+        msg = appmod.upload_pdf(str(f), settings=s)
+        assert "Unsupported type" in msg and ".pptx" in msg
+
+    def test_upload_pptx_without_libreoffice_gives_actionable_message(self, tmp_path, monkeypatch):
+        s = _settings(tmp_path)
+        import app as appmod
+        monkeypatch.setattr(appmod.converter, "find_soffice", lambda: None)
+        f = tmp_path / "deck.pptx"; f.write_bytes(b"PK\x03\x04 fake")
+        msg = appmod.upload_pdf(str(f), settings=s)
+        assert "LibreOffice" in msg and "brew install" in msg and "PDF manually" in msg
 
     def test_upload_empty_selection(self, tmp_path):
         s = _settings(tmp_path)
