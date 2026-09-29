@@ -21,6 +21,7 @@ from rag.config import Settings, get_settings
 from rag.ingest import DocumentStore, DocumentParserError, ingest_document
 
 if TYPE_CHECKING:
+    from rag.flashcards import FlashcardDeck
     from rag.quiz import EvidenceCatalog
 
 
@@ -446,6 +447,82 @@ def _populate_question_panel(quiz_data: dict, index: int) -> tuple:
 
 
 # --------------------------------------------------------------------------- #
+# Flashcards (study cards)
+# --------------------------------------------------------------------------- #
+# Server-side registries, mirroring the quiz pattern: the browser only ever
+# receives card FRONTS; backs + citations are resolved here on reveal, so the
+# answer key never leaves the server.
+_FLASHCARD_DECKS: dict[str, "FlashcardDeck"] = {}
+_FLASHCARD_CATALOGS: dict[str, "EvidenceCatalog"] = {}
+MAX_FLASHCARDS = 24
+
+
+def generate_flashcards_ui(
+    topic: str | None,
+    n_cards: int,
+    settings: Settings | None = None,
+) -> tuple[str, list, str]:
+    """Generate a deck; return (opaque deck_id, public fronts, status)."""
+    from rag.flashcards import FlashcardError, generate_flashcards
+    from rag.quiz import build_evidence_catalog
+
+    s = settings or get_settings()
+    store = _new_store(s)
+    if not topic or not topic.strip():
+        topic = None
+    try:
+        ti, vi = get_qa_indexes(store, settings=s)
+    except Exception as exc:  # noqa: BLE001
+        return ("", [], f"⚠️ Could not build retrieval indexes: {exc}")
+    try:
+        deck, evidence = generate_flashcards(
+            topic=topic, text_idx=ti, visual_idx=vi,
+            n_cards=int(n_cards or 8), settings=s)
+    except FlashcardError as exc:
+        return ("", [], f"⚠️ {exc}")
+
+    _FLASHCARD_DECKS[deck.deck_id] = deck
+    _FLASHCARD_CATALOGS[deck.deck_id] = build_evidence_catalog(evidence)
+    public = [{"front": c.front} for c in deck.cards]
+    how = "auto (whole course)" if topic is None else f"topic: {topic}"
+    return (deck.deck_id, public,
+            f"✅ Generated {len(deck.cards)} flashcards ({how}). "
+            "Pick a card and press **Reveal answer**.")
+
+
+def reveal_flashcard_ui(
+    deck_id: str,
+    front_text: str,
+    settings: Settings | None = None,
+) -> tuple[str, str, str]:
+    """Reveal a card: (back_markdown, sources_markdown, image_html)."""
+    deck = _FLASHCARD_DECKS.get(deck_id)
+    catalog = _FLASHCARD_CATALOGS.get(deck_id)
+    if deck is None or catalog is None:
+        return ("⚠️ Session expired — regenerate the deck.", "", "")
+    try:
+        card = next(c for c in deck.cards if c.front == front_text)
+    except StopIteration:
+        return ("Unknown card.", "", "")
+
+    src_lines = []
+    for eid in card.source_ids:
+        e = catalog.entry(eid)
+        if e:
+            src_lines.append(f"**{e.filename}** · page {e.page_no}")
+    img_html = ""
+    if card.visual and card.source_ids:
+        e = catalog.entry(card.source_ids[0])
+        if e and e.image_path:
+            from rag.renderer import data_url_of
+            src = data_url_of(e.image_path)
+            img_html = (f'<img src="{src}" height="200" alt="slide" '
+                        f'style="border:1px solid #e5e7eb;border-radius:6px">')
+    sources = "Sources: " + " · ".join(src_lines) if src_lines else "Sources: —"
+    return (f"**Back:** {card.back}", sources, img_html)
+
+
+# --------------------------------------------------------------------------- #
 # Gradio app
 # --------------------------------------------------------------------------- #
 def build_app(settings: Settings | None = None) -> gr.Blocks:
@@ -616,6 +693,54 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                     _reveal_from_radios,
                     inputs=[quiz_id_state] + _q_radios,
                     outputs=[review_out, review_images],
+                )
+
+            # ---------------- TAB 4: Flashcards ----------------
+            with gr.Tab("🃏 Flashcards"):
+                gr.Markdown("Generate study flashcards grounded in the ingested "
+                            "course material. Only the card **front** is shown "
+                            "until you flip it — the answer and its source pages "
+                            "are resolved server-side on reveal.")
+                with gr.Row():
+                    fc_topic = gr.Textbox(
+                        label="Topic (blank = Auto)",
+                        placeholder="e.g. Efficient frontier, CAPM, tokenization, …")
+                    fc_count = gr.Number(
+                        label="Number of cards", value=8, precision=0,
+                        minimum=1, maximum=MAX_FLASHCARDS)
+                    gen_fc_btn = gr.Button("Generate Flashcards", variant="primary")
+                fc_status = gr.Markdown("Status: —")
+                fc_deck_state = gr.State("")      # opaque UUID
+                fc_public_state = gr.State([])    # [{front: ...}] only
+
+                with gr.Row():
+                    fc_pick = gr.Dropdown(label="Flashcard (front)", choices=[],
+                                          interactive=True)
+                    reveal_fc_btn = gr.Button("Reveal answer", variant="primary")
+                fc_back = gr.Markdown("")
+                fc_sources = gr.Markdown("")
+                fc_image = gr.HTML("")
+
+                def _populate_fc_dropdown(public):
+                    if not isinstance(public, list) or not public:
+                        return gr.Dropdown(choices=[], value=None)
+                    fronts = [c["front"] for c in public]
+                    return gr.Dropdown(choices=fronts, value=fronts[0])
+
+                gen_fc_btn.click(
+                    generate_flashcards_ui,
+                    inputs=[fc_topic, fc_count],
+                    outputs=[fc_deck_state, fc_public_state, fc_status],
+                )
+                gen_fc_btn.click(
+                    _populate_fc_dropdown,
+                    inputs=[fc_public_state],
+                    outputs=[fc_pick],
+                )
+                reveal_fc_btn.click(
+                    reveal_flashcard_ui,
+                    inputs=[fc_deck_state, fc_pick],
+                    outputs=[fc_back, fc_sources, fc_image],
                 )
 
     return demo
