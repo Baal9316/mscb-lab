@@ -189,3 +189,54 @@ class TestGenerate:
 
     def test_defaults(self):
         assert DEFAULT_CARD_COUNT == 8
+
+
+# --------------------------------------------------------------------------- #
+# Starred-card registry
+# --------------------------------------------------------------------------- #
+class TestStarredRegistry:
+    def test_star_and_load_persist(self, tmp_path):
+        from rag.flashcards import card_key, load_starred_cards, star_card
+        s = _settings(tmp_path)
+        star_card(s, front="What is beta?", back="Sensitivity to market risk.",
+                  sources=["slides.pdf · page 2"], origin="manual")
+        items = load_starred_cards(s)
+        assert len(items) == 1
+        assert items[0]["front"] == "What is beta?"
+        assert items[0]["sources"] == ["slides.pdf · page 2"]
+        assert items[0]["key"] == card_key("What is beta?", "Sensitivity to market risk.")
+
+    def test_star_same_card_dedupes(self, tmp_path):
+        from rag.flashcards import load_starred_cards, star_card
+        s = _settings(tmp_path)
+        star_card(s, front="Q", back="A")
+        star_card(s, front="Q", back="A")   # same content -> same key
+        assert len(load_starred_cards(s)) == 1
+
+    def test_unstar_removes(self, tmp_path):
+        from rag.flashcards import load_starred_cards, star_card, unstar_card
+        s = _settings(tmp_path)
+        e = star_card(s, front="Q", back="A")
+        assert unstar_card(s, e["key"]) is True
+        assert load_starred_cards(s) == []
+        assert unstar_card(s, e["key"]) is False  # gone
+
+    def test_quiz_miss_autostars_with_origin(self, tmp_path):
+        from rag.flashcards import load_starred_cards, add_missed_quiz_cards
+        s = _settings(tmp_path)
+        missed = [{"front": "What is CAPM?", "back": "E(r) = Rf + β(Rm − Rf)",
+                   "sources": ["slides.pdf · page 5"]}]
+        added, _ = add_missed_quiz_cards(s, missed)
+        assert added == 1
+        items = load_starred_cards(s)
+        assert items[0]["origin"] == "quiz-miss"
+        assert items[0]["sources"] == ["slides.pdf · page 5"]
+
+    def test_quiz_miss_resubmit_does_not_duplicate(self, tmp_path):
+        from rag.flashcards import add_missed_quiz_cards, load_starred_cards, star_card
+        s = _settings(tmp_path)
+        missed = [{"front": "Q?", "back": "A."}]
+        star_card(s, front="Q?", back="A.")      # already starred manually
+        added, _ = add_missed_quiz_cards(s, missed)
+        assert added == 0
+        assert len(load_starred_cards(s)) == 1

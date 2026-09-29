@@ -381,6 +381,33 @@ def _grade_from_radios(quiz_id: str, *radio_values) -> str:
         marker = "✅ Correct" if r["correct"] else "❌ Incorrect"
         chosen = r.get("chosen") or "—"
         lines.append(f"- **{r['question_id']}:** {marker}  (your answer: *{chosen}*)")
+
+    # Auto-star missed questions as flashcards (origin: quiz-miss).
+    catalog = _QUIZ_CATALOGS.get(quiz_id)
+    missed: list[dict] = []
+    for r in res["per_question"]:
+        if r["correct"]:
+            continue
+        q = quiz.question_by_id(r["question_id"])
+        if q is None:
+            continue
+        srcs: list[str] = []
+        if catalog:
+            for sid in q.source_ids:
+                e = catalog.entry(sid)
+                if e:
+                    srcs.append(f"{e.filename} · page {e.page_no}")
+        missed.append({
+            "front": q.prompt,
+            "back": f"{q.correct_answer}\n\n💬 {q.explanation}",
+            "sources": srcs,
+        })
+    if missed:
+        from rag.flashcards import add_missed_quiz_cards
+        added, _keys = add_missed_quiz_cards(None, missed)
+        lines.append("")
+        lines.append(f"⭐ Added **{added}** missed question(s) to your "
+                     "**starred flashcards** (see the 🃏 Flashcards tab).")
     return "\n".join(lines)
 
 
@@ -520,6 +547,63 @@ def reveal_flashcard_ui(
                         f'style="border:1px solid #e5e7eb;border-radius:6px">')
     sources = "Sources: " + " · ".join(src_lines) if src_lines else "Sources: —"
     return (f"**Back:** {card.back}", sources, img_html)
+
+
+def star_flashcard_ui(deck_id: str, front_text: str,
+                      settings: Settings | None = None) -> str:
+    """Star the currently revealed card (origin: manual)."""
+    from rag.flashcards import star_card
+    deck = _FLASHCARD_DECKS.get(deck_id)
+    if deck is None:
+        return "⚠️ Session expired — regenerate the deck."
+    try:
+        card = next(c for c in deck.cards if c.front == front_text)
+    except StopIteration:
+        return "Unknown card."
+    catalog = _FLASHCARD_CATALOGS.get(deck_id)
+    sources: list[str] = []
+    if catalog:
+        for eid in card.source_ids:
+            e = catalog.entry(eid)
+            if e:
+                sources.append(f"{e.filename} · page {e.page_no}")
+    star_card(settings, front=card.front, back=card.back,
+              sources=sources, origin="manual")
+    return "⭐ Starred — find it under **Starred flashcards** below."
+
+
+def refresh_starred_ui(settings: Settings | None = None) -> tuple:
+    """Return (dropdown update, count markdown) for the starred list."""
+    from rag.flashcards import load_starred_cards
+    items = load_starred_cards(settings)
+    if not items:
+        return gr.Dropdown(choices=[], value=None), "**0 starred**"
+    choices = [it["front"] for it in items]
+    return gr.Dropdown(choices=choices, value=choices[0]), f"**{len(items)} starred**"
+
+
+def reveal_starred_ui(front_text: str, settings: Settings | None = None) -> tuple[str, str]:
+    from rag.flashcards import load_starred_cards
+    it = next((x for x in load_starred_cards(settings) if x["front"] == front_text), None)
+    if it is None:
+        return "Select a starred card.", ""
+    tag = "⭐ from missed quiz question" if it.get("origin") == "quiz-miss" \
+        else "⭐ you starred this manually"
+    sources = ("Sources: " + " · ".join(it.get("sources") or [])) \
+        if it.get("sources") else "Sources: —"
+    return f"**Back:** {it['back']}\n\n_{tag}_", sources
+
+
+def unstar_flashcard_ui(front_text: str, settings: Settings | None = None) -> tuple[str, object, str]:
+    from rag.flashcards import load_starred_cards, unstar_card
+    items = load_starred_cards(settings)
+    it = next((x for x in items if x["front"] == front_text), None)
+    if it is None:
+        dd, count = refresh_starred_ui(settings)
+        return "Nothing to unstar.", dd, count
+    unstar_card(settings, it["key"])
+    dd, count = refresh_starred_ui(settings)
+    return f"Removed ⭐ from: *{it['front'][:50]}*", dd, count
 
 
 # --------------------------------------------------------------------------- #
@@ -696,11 +780,13 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                 )
 
             # ---------------- TAB 4: Flashcards ----------------
-            with gr.Tab("🃏 Flashcards"):
+            with gr.Tab("🃏 Flashcards") as fc_tab:
                 gr.Markdown("Generate study flashcards grounded in the ingested "
                             "course material. Only the card **front** is shown "
                             "until you flip it — the answer and its source pages "
-                            "are resolved server-side on reveal.")
+                            "are resolved server-side on reveal. **Star** cards "
+                            "you want to revisit; missed practice-quiz questions "
+                            "are auto-starred here too.")
                 with gr.Row():
                     fc_topic = gr.Textbox(
                         label="Topic (blank = Auto)",
@@ -717,9 +803,11 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                     fc_pick = gr.Dropdown(label="Flashcard (front)", choices=[],
                                           interactive=True)
                     reveal_fc_btn = gr.Button("Reveal answer", variant="primary")
+                    star_fc_btn = gr.Button("⭐ Star this card")
                 fc_back = gr.Markdown("")
                 fc_sources = gr.Markdown("")
                 fc_image = gr.HTML("")
+                star_status = gr.Markdown("")
 
                 def _populate_fc_dropdown(public):
                     if not isinstance(public, list) or not public:
@@ -741,6 +829,38 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                     reveal_flashcard_ui,
                     inputs=[fc_deck_state, fc_pick],
                     outputs=[fc_back, fc_sources, fc_image],
+                )
+                star_fc_btn.click(
+                    star_flashcard_ui,
+                    inputs=[fc_deck_state, fc_pick],
+                    outputs=[star_status],
+                )
+
+                with gr.Accordion("⭐ Starred flashcards", open=True):
+                    with gr.Row():
+                        starred_pick = gr.Dropdown(label="Starred card (front)",
+                                                   choices=[], interactive=True)
+                        unstar_fc_btn = gr.Button("Remove ⭐")
+                    starred_back = gr.Markdown("Select a starred card above.")
+                    starred_count = gr.Markdown("**0 starred**")
+
+                    star_fc_btn.click(
+                        refresh_starred_ui,
+                        outputs=[starred_pick, starred_count],
+                    )
+                    starred_pick.change(
+                        reveal_starred_ui,
+                        inputs=[starred_pick],
+                        outputs=[starred_back],
+                    )
+                    unstar_fc_btn.click(
+                        unstar_flashcard_ui,
+                        inputs=[starred_pick],
+                        outputs=[star_status, starred_pick, starred_count],
+                    )
+                fc_tab.select(
+                    refresh_starred_ui,
+                    outputs=[starred_pick, starred_count],
                 )
 
     return demo

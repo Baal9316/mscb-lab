@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
 from .config import Settings, get_settings
@@ -251,3 +252,96 @@ def generate_flashcards(
     if deck is None:
         raise last_error or FlashcardError("Flashcard generation failed.")
     return deck, evidence
+
+
+# --------------------------------------------------------------------------- #
+# Starred-card registry (persisted, survives sessions)
+# --------------------------------------------------------------------------- #
+# Entries are keyed by a content hash (front+back), so re-generated decks
+# don't duplicate stars. Origin tracks how the card got in:
+#   "manual"    -> student starred it in the Flashcards tab
+#   "quiz-miss" -> auto-created from a missed practice-quiz question
+STARRED_CARDS_FILE = "starred_cards.json"
+
+
+def starred_cards_path(settings: Settings | None = None) -> Path:
+    s = settings or get_settings()
+    return Path(s.data_dir) / STARRED_CARDS_FILE
+
+
+def load_starred_cards(settings: Settings | None = None) -> list[dict]:
+    """Load persisted starred cards (newest first)."""
+    path = starred_cards_path(settings)
+    if not path.exists():
+        return []
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    return items if isinstance(items, list) else []
+
+
+def _save_starred_cards(settings, items: list[dict]) -> None:
+    path = starred_cards_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(items, indent=2), encoding="utf-8")
+
+
+def card_key(front: str, back: str) -> str:
+    """Stable identity for a card (star dedupe across regenerated decks)."""
+    import hashlib
+    return hashlib.sha256(f"{front.strip()}\n{back.strip()}".encode()).hexdigest()[:16]
+
+
+def star_card(
+    settings: Settings | None,
+    *,
+    front: str,
+    back: str,
+    sources: Sequence[str] = (),
+    origin: str = "manual",
+) -> dict:
+    """Star a card. Returns the (possibly pre-existing) stored entry."""
+    s = settings or get_settings()
+    key = card_key(front, back)
+    items = [it for it in load_starred_cards(s) if it.get("key") != key]
+    entry = {
+        "key": key, "front": front.strip(), "back": back.strip(),
+        "sources": list(sources), "origin": origin,
+    }
+    items.insert(0, entry)
+    _save_starred_cards(s, items)
+    return entry
+
+
+def unstar_card(settings: Settings | None, key: str) -> bool:
+    """Remove a starred card by key. Returns True if it existed."""
+    s = settings or get_settings()
+    items = load_starred_cards(s)
+    kept = [it for it in items if it.get("key") != key]
+    if len(kept) == len(items):
+        return False
+    _save_starred_cards(s, kept)
+    return True
+
+
+def add_missed_quiz_cards(
+    settings: Settings | None,
+    missed: Sequence[dict],
+) -> tuple[int, list[str]]:
+    """Auto-star cards for missed quiz questions.
+
+    ``missed`` is a list of ``{"front", "back", "sources"}``. Already-starred
+    cards are not duplicated. Returns (newly_added, keys).
+    """
+    s = settings or get_settings()
+    existing = {it.get("key") for it in load_starred_cards(s)}
+    added = 0
+    keys: list[str] = []
+    for m in missed:
+        entry = star_card(s, front=m["front"], back=m["back"],
+                          sources=m.get("sources", ()), origin="quiz-miss")
+        keys.append(entry["key"])
+        if entry["key"] not in existing:
+            added += 1
+    return added, keys
