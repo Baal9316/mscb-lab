@@ -163,6 +163,42 @@ def upload_pdf(file_path, settings: Settings | None = None) -> str:
     return msg + "\n\nSelect the document below to inspect its pages."
 
 
+def upload_files(file_paths, settings: Settings | None = None):
+    """Upload one or more PDFs / .pptx decks in a single batch.
+
+    Accepts a list of paths (or a single path, for backwards compatibility)
+    and runs each through :func:`upload_pdf` one at a time. This is a
+    generator so the UI shows live progress ("Uploading 2 of 5 ...") instead
+    of sitting silent while a large batch is OCR-parsed. One bad file never
+    stops the rest of the batch; each file gets its own result line.
+    """
+    if not file_paths:
+        yield "Please select one or more PDF or PowerPoint (.pptx) files first."
+        return
+    if isinstance(file_paths, (str, Path)):
+        file_paths = [file_paths]
+    paths = [str(p) for p in file_paths if p]
+    total = len(paths)
+
+    results: list[str] = []
+    ok = 0
+    for i, fp in enumerate(paths, start=1):
+        name = Path(fp).name
+        done = "\n\n".join(results)
+        yield (f"⏳ Uploading {i} of {total}: '{name}' …"
+               + (f"\n\n{done}" if done else ""))
+        msg = upload_pdf(fp, settings=settings)
+        # Drop the per-file footer; a single footer is added at the end.
+        msg = msg.replace("\n\nSelect the document below to inspect its pages.", "")
+        if msg.startswith("✅"):
+            ok += 1
+        results.append(f"[{i}/{total}] {name}\n{msg}")
+
+    summary = f"Done: {ok} of {total} file(s) uploaded successfully."
+    footer = "\n\nSelect a document below to inspect its pages." if ok else ""
+    yield summary + "\n\n" + "\n\n".join(results) + footer
+
+
 def refresh_documents(settings: Settings | None = None) -> tuple[str, gr.Dropdown]:
     """Reload the document list. Returns (message, dropdown choices)."""
     store = _new_store(settings)
@@ -652,12 +688,14 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
             with gr.Tab("📁 Document Manager"):
                 with gr.Row():
                     with gr.Column(scale=2):
-                        gr.Markdown("### 1. Upload a PDF")
-                        file_input = gr.File(label="PDF file", file_types=[".pdf"],
+                        gr.Markdown("### 1. Upload PDFs")
+                        file_input = gr.File(label="PDF or .pptx files (select several at once)",
+                                             file_types=[".pdf", ".pptx"],
+                                             file_count="multiple",
                                              type="filepath")
                         upload_btn = gr.Button("Upload", variant="primary")
-                        upload_result = gr.Textbox(label="Upload result", lines=3,
-                                                   interactive=False)
+                        upload_result = gr.Textbox(label="Upload result", lines=6,
+                                                   max_lines=20, interactive=False)
 
                         gr.Markdown("### 2. Manage documents")
                         doc_dropdown = gr.Dropdown(label="Document", choices=[],
@@ -681,8 +719,11 @@ def build_app(settings: Settings | None = None) -> gr.Blocks:
                                                interactive=False)
 
                 # Document-manager wiring
-                upload_btn.click(upload_pdf, inputs=[file_input], outputs=[upload_result])
-                upload_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
+                # Refresh only AFTER the whole batch finishes (.then), so the
+                # document list always includes the files just uploaded.
+                upload_btn.click(upload_files, inputs=[file_input],
+                                 outputs=[upload_result]).then(
+                    refresh_documents, outputs=[doc_list, doc_dropdown])
                 refresh_btn.click(refresh_documents, outputs=[doc_list, doc_dropdown])
                 doc_dropdown.change(get_pages_for_document, inputs=[doc_dropdown],
                                     outputs=[page_dropdown])

@@ -100,6 +100,54 @@ class TestUpload:
         assert "select a pdf" in appmod.upload_pdf(None, settings=s).lower()
 
 
+class TestMultiUpload:
+    """app.upload_files: batch upload wired to the multi-file picker."""
+
+    @staticmethod
+    def _fake_upload(monkeypatch, appmod, calls):
+        def fake(fp, settings=None):
+            calls.append(fp)
+            if fp.endswith(".txt"):
+                return "Unsupported type '.txt'."
+            return (f"✅ Uploaded '{fp}' — 1 pages (document x)."
+                    "\n\nSelect the document below to inspect its pages.")
+        monkeypatch.setattr(appmod, "upload_pdf", fake)
+
+    def test_uploads_every_file_and_summarizes(self, monkeypatch):
+        import app as appmod
+        calls: list[str] = []
+        self._fake_upload(monkeypatch, appmod, calls)
+        outputs = list(appmod.upload_files(["a.pdf", "b.pdf", "c.pdf"]))
+        assert calls == ["a.pdf", "b.pdf", "c.pdf"]
+        # One progress message per file, then the final summary.
+        assert len(outputs) == 4
+        assert "Uploading 2 of 3" in outputs[1]
+        assert outputs[-1].startswith("Done: 3 of 3")
+        assert outputs[-1].count("Select a document below") == 1
+
+    def test_one_bad_file_does_not_stop_the_batch(self, monkeypatch):
+        import app as appmod
+        calls: list[str] = []
+        self._fake_upload(monkeypatch, appmod, calls)
+        final = list(appmod.upload_files(["a.pdf", "notes.txt", "b.pdf"]))[-1]
+        assert calls == ["a.pdf", "notes.txt", "b.pdf"]
+        assert final.startswith("Done: 2 of 3")
+        assert "Unsupported type" in final
+
+    def test_single_path_still_works(self, monkeypatch):
+        import app as appmod
+        calls: list[str] = []
+        self._fake_upload(monkeypatch, appmod, calls)
+        final = list(appmod.upload_files("only.pdf"))[-1]
+        assert calls == ["only.pdf"] and final.startswith("Done: 1 of 1")
+
+    def test_empty_selection(self):
+        import app as appmod
+        for empty in (None, []):
+            out = list(appmod.upload_files(empty))
+            assert len(out) == 1 and "select one or more" in out[0].lower()
+
+
 class TestDocumentList:
     def test_list_shows_docs_after_upload(self, tmp_path, monkeypatch):
         s = _settings(tmp_path)
