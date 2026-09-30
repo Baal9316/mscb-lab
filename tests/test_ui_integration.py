@@ -411,3 +411,33 @@ class TestQuizUI:
         assert appmod.generate_quiz_ui
         assert appmod._grade_from_radios
         assert appmod._reveal_from_radios
+
+
+class TestFlashcardStarredReveal:
+    """Regression: reveal_starred_ui must return ONE markdown string (it is
+    wired to a single Gradio output). A tuple return crashes Gradio with
+    'Could not postprocess output component at index 0'."""
+
+    def test_reveal_no_selection_returns_plain_string(self, tmp_path):
+        import app as appmod
+        s = _settings(tmp_path)   # empty store -> zero starred cards
+        out = appmod.reveal_starred_ui("", settings=s)
+        assert isinstance(out, str), f"expected str, got {type(out)}"
+        assert not isinstance(out, tuple)
+        assert "Select a starred card." in out
+
+    def test_reveal_unknown_front_returns_plain_string(self, tmp_path):
+        import app as appmod
+        s = _settings(tmp_path)
+        out = appmod.reveal_starred_ui("does-not-exist", settings=s)
+        assert isinstance(out, str)
+        assert "Select a starred card." in out
+
+    def test_reveal_starred_card_returns_plain_string(self, tmp_path):
+        import app as appmod
+        from rag.flashcards import star_card
+        s = _settings(tmp_path)
+        star_card(s, front="Q?", back="A.", sources=["slides.pdf · page 1"])
+        out = appmod.reveal_starred_ui("Q?", settings=s)
+        assert isinstance(out, str) and not isinstance(out, tuple)
+        assert "A." in out and "Sources:" in out
