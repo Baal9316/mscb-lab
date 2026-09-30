@@ -604,16 +604,17 @@ def refresh_starred_ui(settings: Settings | None = None) -> tuple:
     return gr.Dropdown(choices=choices, value=choices[0]), f"**{len(items)} starred**"
 
 
-def reveal_starred_ui(front_text: str, settings: Settings | None = None) -> tuple[str, str]:
+def reveal_starred_ui(front_text: str, settings: Settings | None = None) -> str:
+    """Reveal a starred card as ONE markdown string (single Gradio output)."""
     from rag.flashcards import load_starred_cards
     it = next((x for x in load_starred_cards(settings) if x["front"] == front_text), None)
     if it is None:
-        return "Select a starred card.", ""
+        return "Select a starred card."
     tag = "⭐ from missed quiz question" if it.get("origin") == "quiz-miss" \
         else "⭐ you starred this manually"
     sources = ("Sources: " + " · ".join(it.get("sources") or [])) \
         if it.get("sources") else "Sources: —"
-    return f"**Back:** {it['back']}\n\n_{tag}_", sources
+    return f"**Back:** {it['back']}\n\n_{tag}_\n\n{sources}"
 
 
 def unstar_flashcard_ui(front_text: str, settings: Settings | None = None) -> tuple[str, object, str]:
