@@ -42,8 +42,10 @@ def make_deck() -> Path:
     return DECK
 
 
-def data_url(path: Path) -> str:
-    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+def data_url(path: str | Path) -> str:
+    """Base64 data URL from a PNG path (accepts str or Path — renderer returns
+    image_path as str, so normalizing here is required)."""
+    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode()
 
 
 def viewer(pages) -> str:
