@@ -1,7 +1,7 @@
 """Fixed, grounded 8-question evaluation set for Issue #7.
 
 Every expected page / expected fact below was verified against the ACTUAL
-Week 2 deck ("MBAX 6418 - Week 2 - LLM Fundamentals v2 (1).pptx.pdf").
+Week 2 deck (the course deck used for this assignment's evaluations).
 DO NOT guess or edit pages without re-inspecting the deck — the harness tests
 assert this file changes only with explicit review.
 
@@ -10,9 +10,9 @@ approved "temperature / top-p" topic was confirmed absent from the deck.
 """
 from __future__ import annotations
 
-# filename used to ground pages (for human readability only; results never
-# embed credentials).
-WEEK2_FILENAME = "MBAX 6418 - Week 2 - LLM Fundamentals v2 (1).pptx.pdf"
+# Neutral label for the course deck used to ground pages (for human
+# readability only; results never embed credentials or private filenames).
+WEEK2_FILENAME = "Week 2 deck"
 
 # ---------------------------------------------------------------------------- #
 # Evaluation set (order fixed). Each item:
