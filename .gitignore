@@ -32,6 +32,11 @@ logs/
 _probe_images/
 *_probe_results.md
 
+# PPTX->PDF conversion demo artifacts (convert_demo.py outputs)
+_demo_deck.pptx
+_convert_work/
+converted_slides.html
+
 # Runtime data (uploaded docs, rendered pages, indexes)
 data/
 *.local
