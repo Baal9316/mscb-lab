@@ -19,12 +19,17 @@ from __future__ import annotations
 import csv
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .eval_set import get_eval_set
-from .scoring import (score_answer, score_insufficient, score_sequence,
-                      score_source_hit, score_visual)
+from .scoring import (
+    score_answer,
+    score_insufficient,
+    score_sequence,
+    score_source_hit,
+    score_visual,
+)
 
 TOP_K = 5
 
@@ -83,8 +88,13 @@ def _generate_from_evidence(question: str, evidence, *, settings, llm=None) -> t
 
     Returns (StructuredAnswer, generation_latency).
     """
-    from rag.qa import (StructuredAnswer, build_sources, generate_llm_response,
-                        parse_structured_answer, prompt_from_evidence)
+    from rag.qa import (
+        StructuredAnswer,
+        build_sources,
+        generate_llm_response,
+        parse_structured_answer,
+        prompt_from_evidence,
+    )
     if not evidence:
         return StructuredAnswer(
             answer="The course materials do not contain enough information to "

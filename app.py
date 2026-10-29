@@ -19,7 +19,7 @@ import gradio as gr
 
 from rag import converter
 from rag.config import Settings, get_settings
-from rag.ingest import DocumentStore, DocumentParserError, ingest_document
+from rag.ingest import DocumentStore, ingest_document
 
 if TYPE_CHECKING:
     from rag.flashcards import FlashcardDeck
@@ -257,7 +257,7 @@ def ask_question(question: str, settings: Settings | None = None) -> tuple:
     Returns (answer_text, sources_block, images, status). ``images`` is a list
     of source image file paths (one per cited source) for the UI to render.
     """
-    from rag.qa import answer_question, QAGenerationError
+    from rag.qa import QAGenerationError, answer_question
 
     if not question or not question.strip():
         return ("Please enter a question.", "", [], "⚠️ No question")
@@ -300,7 +300,7 @@ def ask_question(question: str, settings: Settings | None = None) -> tuple:
 # --------------------------------------------------------------------------- #
 # Session-scoped mapping from quiz_id -> catalog of evidence used (so reveal()
 # and public-image lookup can attach trusted sources without re-retrieving).
-_QUIZ_CATALOGS: dict[str, "EvidenceCatalog"] = {}
+_QUIZ_CATALOGS: dict[str, EvidenceCatalog] = {}
 
 # Gradio pre-creates this many question panels; only the first n_questions are
 # shown after generation, the rest stay hidden.
@@ -320,7 +320,11 @@ def generate_quiz_ui(
     the private key and source mapping never leave the server.
     """
     from rag.quiz import (
-        build_evidence_catalog, build_public_quiz, generate_quiz, QuizError)
+        QuizError,
+        build_evidence_catalog,
+        build_public_quiz,
+        generate_quiz,
+    )
 
     s = settings or get_settings()
     store = _new_store(s)
@@ -353,7 +357,7 @@ def grade_quiz_ui(quiz_id: str, answers_json: str) -> str:
     the server-side registry. The public quiz data is never used to lookup or
     grade.
     """
-    from rag.quiz import grade_quiz, get_quiz
+    from rag.quiz import get_quiz, grade_quiz
     quiz = get_quiz(quiz_id)
     if quiz is None:
         return json.dumps({"error": "unknown quiz"})
@@ -440,7 +444,7 @@ def _reveal_from_radios(quiz_id: str, *radio_values) -> tuple[str, list]:
     review including the student's answer, correct answer, explanation,
     citation, and supporting excerpt; slide images are returned separately for
     the Gradio gallery."""
-    from rag.quiz import get_quiz, EvidenceCatalog
+    from rag.quiz import EvidenceCatalog, get_quiz
     quiz = get_quiz(quiz_id)
     if quiz is None:
         return "❌ Unknown quiz. Generate a quiz first.", []
@@ -501,8 +505,8 @@ def _populate_question_panel(quiz_data: dict, index: int) -> tuple:
 # Server-side registries, mirroring the quiz pattern: the browser only ever
 # receives card FRONTS; backs + citations are resolved here on reveal, so the
 # answer key never leaves the server.
-_FLASHCARD_DECKS: dict[str, "FlashcardDeck"] = {}
-_FLASHCARD_CATALOGS: dict[str, "EvidenceCatalog"] = {}
+_FLASHCARD_DECKS: dict[str, FlashcardDeck] = {}
+_FLASHCARD_CATALOGS: dict[str, EvidenceCatalog] = {}
 MAX_FLASHCARDS = 24
 
 

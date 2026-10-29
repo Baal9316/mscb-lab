@@ -242,7 +242,6 @@ class TextIndex:
                 break
         # If a single page has few chunks, top up from remaining chunks.
         if len(out) < limit and len(self._chunks):
-            added = set()
             for chunk in self._chunks:
                 if len(out) >= limit:
                     break

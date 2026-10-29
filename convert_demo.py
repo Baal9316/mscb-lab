@@ -14,7 +14,7 @@ import base64
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches
 
 from rag import converter
 from rag.renderer import render_pdf_pages

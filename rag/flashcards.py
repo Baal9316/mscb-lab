@@ -23,15 +23,19 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 from .config import Settings, get_settings
 from .qa import QAGenerationError, generate_llm_response
 from .quiz import (
-    EvidenceCatalog, QuizError, _extract_json_block, build_evidence_catalog,
-    suggest_topics, _sample_diverse_text,
+    EvidenceCatalog,
+    QuizError,
+    _extract_json_block,
+    _sample_diverse_text,
+    build_evidence_catalog,
+    suggest_topics,
 )
 from .rerank_pipeline import RerankedEvidence, rerank_evidence
 from .retrieval import TextIndex
@@ -230,7 +234,7 @@ def generate_flashcards(
         deck_id = str(uuid.uuid4())
         try:
             content = llm(messages, max_tokens=max_tokens, settings=s)
-        except QAGenerationError as exc:  # noqa: BLE001
+        except QAGenerationError as exc:
             raise FlashcardError(f"LLM call failed: {exc}") from exc
         raw_cards = parse_flashcards_response(content)
         cards: list[Flashcard] = []
