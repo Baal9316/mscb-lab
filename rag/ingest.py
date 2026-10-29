@@ -112,7 +112,7 @@ def ingest_document(
                 parse_error=parse_error,
             ))
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         shutil.rmtree(doc_dir, ignore_errors=True)
         raise IngestionError(f"Ingestion failed for {pdf_path.name}: {exc}") from exc
 

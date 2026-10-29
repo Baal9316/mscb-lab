@@ -30,11 +30,12 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any
 
 from .config import Settings, get_settings
-from .qa import QAGenerationError, Source, generate_llm_response
+from .qa import Source, generate_llm_response
 from .rerank_pipeline import RerankedEvidence, rerank_evidence
 from .retrieval import TextIndex
 from .visual_retrieval import VisualIndex
@@ -325,7 +326,7 @@ def validate_question(
         explanation = str(raw.get("explanation", "")).strip()
         source_ids_raw = raw.get("source_ids", [])
         visual_raw = raw.get("visual", False)
-    except Exception as exc:  # noqa: BLE001 - normalize defensive
+    except Exception as exc:
         raise QuizError(f"Question {index + 1}: malformed fields: {exc}") from exc
 
     if not prompt:
@@ -545,7 +546,7 @@ def generate_quiz(
     last_error: QuizError | None = None
     for attempt in range(2):
         quiz_id = str(uuid.uuid4())
-        content = llm(messages, max_tokens=max_tokens, settings=s)  # noqa: BLE001 - wrap below
+        content = llm(messages, max_tokens=max_tokens, settings=s)
         raw_questions = parse_quiz_response(content)
         questions: list[QuizQuestion] = []
         skipped: int = 0
@@ -590,7 +591,7 @@ def grade_quiz(
     """
     correct_count = 0
     per_question = []
-    used_key = {"correct_answer": True}  # proof grading reads stored key only.
+    used_key = {"correct_answer": True}  # proof grading reads stored key only.  # noqa: F841
     for q in quiz.questions:
         chosen = answers.get(q.question_id)
         is_correct = bool(chosen) and chosen == q.correct_answer

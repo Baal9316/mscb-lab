@@ -6,7 +6,7 @@ back to its source document and page/slide number.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
 
@@ -66,7 +66,7 @@ class Document:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Document":
+    def from_dict(cls, data: dict) -> Document:
         pages = [DocumentPage(**pg) for pg in data.get("pages", [])]
         return cls(
             document_id=data["document_id"],

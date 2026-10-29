@@ -23,12 +23,11 @@ Flow for ``rerank_evidence``:
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
-from .config import Settings, get_settings
-from .retrieval import EmptyIndexError, TextIndex
+from .config import Settings
 from .reranker import RerankError, rerank_candidates
+from .retrieval import EmptyIndexError, TextIndex
 from .visual_retrieval import EmptyVisualIndexError, VisualIndex
 
 
